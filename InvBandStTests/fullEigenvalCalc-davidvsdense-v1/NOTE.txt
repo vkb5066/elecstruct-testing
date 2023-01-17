@@ -1,0 +1,2 @@
+V(G), psi(G) are both 3d numpy arrays in this implementation.
+I use scipy's fft routines in this implementation.

@@ -1,0 +1,2 @@
+V(G), psi(G) are both 1d lists in this implementation.
+I use my own fft routines in this implementation.
