@@ -96,7 +96,8 @@ from numpy import reshape
 #If v0m, v0n = 0, then random initialization for the entire set V is done (send V0 as NULL).
 #otherwise, V0 is assumed to be a v0m x v0n array (pointer-to-pointer to make resending old eigenvecs easier)
 def DavidFFT(n, mills, gs, kpt, vrgrid, gridsizes, nEigs, maxBasisSize=None, v0m=0, v0n=0,
-             V0=None, eTol=1e-3):
+             V0=None, eTol=1e-3,
+             fsm=0, eref=0.0): ##flags for using the folded spectrum method
     if(maxBasisSize == None):
         maxBasisSize = min(int(6.25*nEigs), n-1) ##emperically determined "good enough" max basis size
                                                  ##prob. will not be the same for c code since this isn't
@@ -147,7 +148,7 @@ def DavidFFT(n, mills, gs, kpt, vrgrid, gridsizes, nEigs, maxBasisSize=None, v0m
     ##Main diagonals of the hamiltonian, these are used often enough to warrent their own storage
     D = empty(shape=(n), dtype=float)
     for i in range(0, n):
-        D[i] = hrps.LocKin(k=kpt, Gi=gs[i], Gj=gs[i])
+        D[i] = hrps.LocKin(k=kpt, Gi=gs[i], Gj=gs[i]) - eref
 
 
     ##columns of ritz vectors (stored as rows, pointer-to-pointer since we'll be returning these as eigvecs)
@@ -188,6 +189,14 @@ def DavidFFT(n, mills, gs, kpt, vrgrid, gridsizes, nEigs, maxBasisSize=None, v0m
                                     gridsizes=gridsizes, npw=n, mills=mills,
                                     res=W[i*n:(i+1)*n],
                                     diags=D, buff=buff)
+            if(fsm): ##this is equivalent to doing H' @ H', if we were able to store all of H' at once
+                     ##note: psiv and res are the same vector!  you can't use the restrict keyword here!
+                     ##(unless we made a tmp variable for W ... worth it?)
+                from copy import deepcopy
+                W[i*n:(i+1)*n] = action(vg=vrgrid, psig=psigridmain, psiv=deepcopy(W[i*n:(i+1)*n]),
+                                        gridsizes=gridsizes, npw=n, mills=mills,
+                                        res=W[i*n:(i+1)*n],
+                                        diags=D, buff=buff)
 
 
         #H = V* @ W^T, w/ H hermitian (hence this being a bit more complex than the normal dot prod formula)
@@ -222,7 +231,7 @@ def DavidFFT(n, mills, gs, kpt, vrgrid, gridsizes, nEigs, maxBasisSize=None, v0m
         sind = va.argsort()[:nEigs]
         va = va[sind]
         ve = ve[:,sind]
-        ve = transpose(ve) ##this will be the case for my C implementation of eigh
+        ve = transpose(ve) ##this is the case for my C implementation of eigh
 
 
         #Get ritz vectors
@@ -243,8 +252,7 @@ def DavidFFT(n, mills, gs, kpt, vrgrid, gridsizes, nEigs, maxBasisSize=None, v0m
             dev = abs(currE - lastE)
             print(counter, dev)
             if(dev < eTol):
-                return va, X
-                #return va, conj(X) ##do this if V(G)-> is sent as V*(G) -> V(r)
+                break
         else:
             print(counter, "---")
         lastE = currE
@@ -265,7 +273,7 @@ def DavidFFT(n, mills, gs, kpt, vrgrid, gridsizes, nEigs, maxBasisSize=None, v0m
                 T[ij] = va[i]*X[i][j]
                 for k in range(0, currBasisSize): ##the ith, jth component of W^T @ ve
                     T[ij] -= ve[i][k] * W[acc(n,k,j)]
-                T[ij] /= (va[i] - D[j])
+                T[ij] /= (va[i] - D[j]) ###may want double precision for T because of this step
 
 
         #Increase the basis size or restart
@@ -289,6 +297,44 @@ def DavidFFT(n, mills, gs, kpt, vrgrid, gridsizes, nEigs, maxBasisSize=None, v0m
 
         currBasisSize += nEigs
         counter += 1
+
+    #If we're doing fsm, then va actually contain the eigenvalues va = (lam - eref)^2 where we're actually
+    #interested in lam (note that the eigenvectors, X, are unaffected by the fsm)
+    #we need to find the true eigenvalues.  If there's a better way to do this, i don't know it :(
+    #Just compute AX and choose whichever lam in (lam1, lam2) causes max(AX - lam*X) to be closest to zero
+    if(fsm):
+        for i in range(0, n):
+            D[i] += eref ##need to get back to the original hamiltonian, not the fsm one
+        psih = empty(shape=n, dtype=complex)
+        for i in range(0, nEigs):
+            psih.fill(0.0 + 0.0j)
+            psih = action(vg=vrgrid, psig=psigridmain, psiv=X[i],
+                                    gridsizes=gridsizes, npw=n, mills=mills,
+                                    res=psih,
+                                    diags=D, buff=buff)
+            #Find which lambda gives the smallest error in A@x - lam*x = 0
+            max1, max2 = 0. + 0.j, 0. + 0.j
+            lam1, lam2 = +(abs(va[i].real))**(1/2) + eref, -(abs(va[i].real))**(1/2) + eref
+            #print(i, lam1, lam2)
+            for j in range(0, n):
+                tes1 = abs(psih[j] - lam1*X[i][j])
+                tes2 = abs(psih[j] - lam2*X[i][j])
+                if(tes1 > max1):
+                    max1 = tes1
+                if(tes2 > max2):
+                    max2 = tes2
+            #print(i, max1, max2)
+            va[i] = lam1 if (max1 < max2) else lam2
+
+        #Now, re-sort the real eigenvalues and their corresponding eigenvectors
+        sind = va.argsort()[:nEigs]
+        va = va[sind]
+        X = transpose(X)
+        X = X[:,sind]
+        X = transpose(X)
+
+    return va, X
+    # return va, conj(X) ##do this if V(G)-> is sent as V*(G) -> V(r)
 
 
 

@@ -47,57 +47,99 @@ sizesp = [GiveSampleMaxInd(hrps.gcut2, hrps.B[0], hrps.KPT[0]), ##hmax
 mills, gs = hrps.GetPsiList(B=hrps.B, kpt=hrps.KPT, millmax=sizesp, gcut2=hrps.gcut2)
 npw = len(mills)
 
-#Get eigenpairs the smart way
-vas, ves = hdav.DavidFFT(n=npw, mills=mills, gs=gs, kpt=hrps.KPT, vrgrid=vrgrid, gridsizes=sizesv,
-                         nEigs=N_EIGS, maxBasisSize=None, v0m=0, v0n=0, V0=None, eTol=1e-3)
 
 
-#Get eigenpairs the dumb way
-from numpy import sort
-from numpy.linalg import eig
-from scipy.sparse.linalg import eigs
-A = hrps.BuildHamil(k=hrps.KPT, npw=npw, gs=gs, mils=mills)
-vad, ved = eig(A)
-sind = vad.argsort()[:N_EIGS]
-vad = vad[sind]
-ved = ved[:,sind]
+TEST_FOLDSPEC = 1
+eref = 9.
+if(not TEST_FOLDSPEC):
+    #Get eigenpairs the smart way
+    vas, ves = hdav.DavidFFT(n=npw, mills=mills, gs=gs, kpt=hrps.KPT, vrgrid=vrgrid, gridsizes=sizesv,
+                             nEigs=N_EIGS, maxBasisSize=None, v0m=0, v0n=0, V0=None, eTol=1e-3,
+                             fsm=TEST_FOLDSPEC, eref=0.0)
 
-print("\ndifferences in sparse vecs vs dumb vecs")
-vad2, ved2 = eigs(A, k=N_EIGS, which='SR')
-for i in range(0, N_EIGS):
-    diff = min(max(ved[:,i] - ved2[:,i]), max(ved[:,i] + ved2[:,i])) ##even normalized, may differ in sign
-    print(i, abs(diff))
 
-#And compare the results
-from numpy import allclose, transpose, conj, round
-from numpy.linalg import norm
-print("\n\n")
-valsok = allclose(vas, vad, 1e-3, 1e-3)
-print("dav vals match with dumb vals?", valsok)
-if(not valsok):
-    print(vas - vad)
+    #Get eigenpairs the dumb way
+    from numpy import sort
+    from numpy.linalg import eig
+    from scipy.sparse.linalg import eigs
+    A = hrps.BuildHamil(k=hrps.KPT, npw=npw, gs=gs, mils=mills)
+    vad, ved = eig(A)
+    sind = vad.argsort()[:N_EIGS]
+    vad = vad[sind]
+    ved = ved[:,sind]
 
-ves = transpose(ves)
-okay = True
-print("\nerrors in H|psi> = e|psi> from dav")
-for i in range(0, N_EIGS):
-    okay = allclose(A@ves[:,i] - vas[i]*ves[:,i], 0.0, 1e-3, 1e-3)
-    if(not okay):
-        print(i, max(A@ves[:,i] - vas[i]*ves[:,i]))
+    print("\ndifferences in sparse vecs vs dumb vecs")
+    vad2, ved2 = eigs(A, k=N_EIGS, which='SR')
+    for i in range(0, N_EIGS):
+        diff = min(max(ved[:,i] - ved2[:,i]), max(ved[:,i] + ved2[:,i])) ##even normalized, may differ in sign
+        print(i, abs(diff))
 
-print("\nerrors in H|psi> = e|psi> from dumb method")
-for i in range(0, N_EIGS):
-    okay = allclose(A@ved[:,i] - vad[i]*ved[:,i], 0.0, 1e-3, 1e-3)
-    if(not okay):
-        print(i, max(A@ved[:,i] - vad[i]*ved[:,i]))
+    #And compare the results
+    from numpy import allclose, transpose, conj, round
+    from numpy.linalg import norm
+    print("\n\n")
+    valsok = allclose(vas, vad, 1e-3, 1e-3)
+    print("dav vals match with dumb vals?", valsok)
+    if(not valsok):
+        print(vas - vad)
 
-#this one is slightly worrying, but maybe shouldn't be ... I mean, Hx - ex ~ 0, and x are normalized
-#so what gives?  Maybe repeated eigenvalues?
-print("\ndifferences in dav vecs vs dumb vecs")
-for i in range(0, N_EIGS):
-    diff = min(max(ved[:,i] - ves[:,i]), max(ved[:,i] + ves[:,i])) ##even normalized, may differ in sign
-    print(i, abs(diff))
+    ves = transpose(ves)
+    okay = True
+    print("\nerrors in H|psi> = e|psi> from dav")
+    for i in range(0, N_EIGS):
+        okay = allclose(A@ves[:,i] - vas[i]*ves[:,i], 0.0, 1e-3, 1e-3)
+        if(not okay):
+            print(i, max(A@ves[:,i] - vas[i]*ves[:,i]))
 
-print("\nnorms (dumb, dav)")
-for i in range(0, N_EIGS):
-    print(i, norm(ved[:,i]), norm([ves[:,i]]))
+    print("\nerrors in H|psi> = e|psi> from dumb method")
+    for i in range(0, N_EIGS):
+        okay = allclose(A@ved[:,i] - vad[i]*ved[:,i], 0.0, 1e-3, 1e-3)
+        if(not okay):
+            print(i, max(A@ved[:,i] - vad[i]*ved[:,i]))
+
+    #this one is slightly worrying, but maybe shouldn't be ... I mean, Hx - ex ~ 0, and x are normalized
+    #so what gives?  Maybe repeated eigenvalues?
+    print("\ndifferences in dav vecs vs dumb vecs")
+    for i in range(0, N_EIGS):
+        diff = min(max(ved[:,i] - ves[:,i]), max(ved[:,i] + ves[:,i])) ##even normalized, may differ in sign
+        print(i, abs(diff))
+
+    print("\nnorms (dumb, dav)")
+    for i in range(0, N_EIGS):
+        print(i, norm(ved[:,i]), norm([ves[:,i]]))
+
+if(TEST_FOLDSPEC):
+    # Get eigenpairs the smart way
+    vas, ves = hdav.DavidFFT(n=npw, mills=mills, gs=gs, kpt=hrps.KPT, vrgrid=vrgrid, gridsizes=sizesv,
+                             nEigs=N_EIGS, maxBasisSize=None, v0m=0, v0n=0, V0=None, eTol=1e-3,
+                             fsm=TEST_FOLDSPEC, eref=eref)
+
+    # Get eigenpairs the dumb way
+    from numpy import sort
+    from numpy.linalg import eig
+
+    A = hrps.BuildHamil(k=hrps.KPT, npw=npw, gs=gs, mils=mills)
+    vad, ved = eig(A)
+    ###get those closest to eref
+    distsfromeref = []
+    for i in range(0, npw):
+        distsfromeref.append(abs(vad[i].real - eref))
+    vad = vad.tolist()
+    distsfromeref, vad = (list(t) for t in zip(*sorted(zip(distsfromeref, vad))))
+    vad = vad[:N_EIGS]
+    vad = sorted([v.real for v in vad])
+
+    #And finially compare eigenvalues
+    print("My eigs, closest to", eref)
+    print(vas.real)
+    print("dumb eigs closest to", eref)
+    print(vad)
+    print("max diff =", max([abs(v.real - q) for v, q in zip(vas, vad)]))
+
+    print("\nerrors in H|psi> = e|psi> from dav")
+    from numpy import allclose, transpose
+    ves = transpose(ves)
+    for i in range(0, N_EIGS):
+        okay = allclose(A@ves[:,i] - vas[i]*ves[:,i], 0.0, 1e-3, 1e-3)
+        if(not okay):
+            print(i, max(A@ves[:,i] - vas[i]*ves[:,i]))
