@@ -20,7 +20,8 @@ def NLO2(n):
 
 
 def _acc3(i, j, k, lx, ly, lz):
-    return i + lx*(j + k*ly)
+    #return i*(ly*lz) + j*(lz) + k
+    return (i*ly + j)*lz + k
 
 
 #Returns the size of the fft grid given a miller index m that satisfies m*|b| >= Gcut, m=|m|
@@ -195,6 +196,10 @@ def _fftbasedif(arr, l2n, n, x):
 
 
 
+"""
+This stuff won't work now that I've changed indices to be c-friendly.  
+See 'fft3d-simple-difdit-1dinput-reorg.py' vs. the same title w/o '-input' for how to deal with this, if it
+becomes necessary (it prob. wont)
 
 
 def fft3dit(arr, buff, pows, sizes, isign):
@@ -403,7 +408,6 @@ def fft3dit_(arr, pows, sizes, isign):
 
 
 
-
 #Very special cases ------------------------------------------------------------------------------------------
 
 
@@ -458,6 +462,8 @@ def _fftconv3basedit_old(arr, buff, pows, sizes):
             arr[lo:hi] = _fftbasedit(arr=arr[lo:hi], l2n=pows[0], n=sizes[0], x=-pi)
 
     return arr
+"""
+
 
 
 # --- VERY VERY SPECIAL CASES --------------------------------------------------------------------------------
@@ -467,31 +473,28 @@ from numpy import empty
 #TODO: allocate tmp outside of loop, watch out for memory leaks! this (maybe) returns tmp, not arr!
 #(you could just swap ptrs i.e. SWAP(tmp, arr) before returning, then you can always free tmp w/o worrying)
 def _fftconv3basedif(arr, pows, sizes,
-                     buff=None): ###buff isn't used, but i kept it here to be compatible with old code
+                     buff=None): ###buff isn't used, but i kept it here to be compatible with old fun calls
     tmp = empty(shape=sizes[0]*sizes[1]*sizes[2], dtype=complex)
 
-    for j in range(0, sizes[1]):
-        for k in range(0, sizes[2]):
-            lo = _acc3(0, j, k, sizes[0], sizes[1], sizes[2])
-            arr[lo:lo+sizes[0]] = _fftbasedif(arr=arr[lo:lo+sizes[0]], l2n=pows[0], n=sizes[0], x=+pi)
-            ##exchange ijk -> jki
-            for i in range(0, sizes[0]):
-                tmp[_acc3(j, k, i, sizes[1], sizes[2], sizes[0])] = arr[lo + i]
-    for k in range(0, sizes[2]):
-        for i in range(0, sizes[0]):
-            lo = _acc3(0, k, i, sizes[1], sizes[2], sizes[0])
-            tmp[lo:lo+sizes[1]] = _fftbasedif(arr=tmp[lo:lo+sizes[1]], l2n=pows[1], n=sizes[1], x=+pi)
-            ##exchange jki -> kij
-            for j in range(0, sizes[1]):
-                arr[_acc3(k, i, j, sizes[2], sizes[0], sizes[1])] = tmp[lo + j]
-    for i in range(0, sizes[0]):
+    for i in range(0, sizes[0]): ##ijk loop
         for j in range(0, sizes[1]):
-            lo = _acc3(0, i, j, sizes[2], sizes[0], sizes[1])
+            lo = _acc3(i, j, 0, sizes[0], sizes[1], sizes[2])
             arr[lo:lo+sizes[2]] = _fftbasedif(arr=arr[lo:lo+sizes[2]], l2n=pows[2], n=sizes[2], x=+pi)
-            ##if we're careful, we can avoid this permutation by doing the dit version backwards
-#            ##exchange kij -> ijk
-#            for k in range(0, sizes[2]):
-#                tmp[_acc3(i, j, k, sizes[0], sizes[1], sizes[2])] = arr[lo + k]
+            for k in range(0, sizes[2]): ##permute ijk -> jki
+                tmp[_acc3(j, k, i, sizes[1], sizes[2], sizes[0])] = arr[lo + k]
+    for j in range(0, sizes[1]): ##jki loop
+        for k in range(0, sizes[2]):
+            lo = _acc3(j, k, 0, sizes[1], sizes[2], sizes[0])
+            tmp[lo:lo+sizes[0]] = _fftbasedif(arr=tmp[lo:lo+sizes[0]], l2n=pows[0], n=sizes[0], x=+pi)
+            for i in range(0, sizes[0]): ##permute jki -> kij
+                arr[_acc3(k, i, j, sizes[2], sizes[0], sizes[1])] = tmp[lo + i]
+    for k in range(0, sizes[2]): ##kij loop
+        for i in range(0, sizes[0]):
+            lo = _acc3(k, i, 0, sizes[2], sizes[0], sizes[1])
+            arr[lo:lo+sizes[1]] = _fftbasedif(arr=arr[lo:lo+sizes[1]], l2n=pows[1], n=sizes[1], x=+pi)
+            ##we can skip this so long as we're careful to do the dit algo backwards
+            ##for j in range(0, sizes[1]): ##permute kij -> ijk
+            ##    tmp[_acc3(i, j, k, sizes[0], sizes[1], sizes[2])] = arr[lo + j]
 
     return arr
 
@@ -507,27 +510,24 @@ def _fftconv3basedit(arr, pows, sizes,
                      buff=None): ###buff isn't used, but i kept it here to be compatible with old code
     tmp = empty(shape=sizes[0]*sizes[1]*sizes[2], dtype=complex)
 
-    for i in range(0, sizes[0]):
-        for j in range(0, sizes[1]):
-            lo = _acc3(0, i, j, sizes[2], sizes[0], sizes[1])
-            arr[lo:lo+sizes[2]] = _fftbasedit(arr=arr[lo:lo+sizes[2]], l2n=pows[2], n=sizes[2], x=-pi)
-            ##exchange kij -> jki
-            for k in range(0, sizes[2]):
-                tmp[_acc3(j, k, i, sizes[1], sizes[2], sizes[0])] = arr[lo + k]
-    for k in range(0, sizes[2]):
+    for k in range(0, sizes[2]): ##kij loop
         for i in range(0, sizes[0]):
-            lo = _acc3(0, k, i, sizes[1], sizes[2], sizes[0])
-            tmp[lo:lo+sizes[1]] = _fftbasedit(arr=tmp[lo:lo+sizes[1]], l2n=pows[1], n=sizes[1], x=-pi)
-            ##exchange jki -> ijk
-            for j in range(0, sizes[1]):
-                arr[_acc3(i, j, k, sizes[0], sizes[1], sizes[2])] = tmp[lo + j]
-    for j in range(0, sizes[1]):
+            lo = _acc3(k, i, 0, sizes[2], sizes[0], sizes[1])
+            arr[lo:lo+sizes[1]] = _fftbasedit(arr=arr[lo:lo+sizes[1]], l2n=pows[1], n=sizes[1], x=-pi)
+            for j in range(0, sizes[1]): ##permute kij -> jki
+                tmp[_acc3(j, k, i, sizes[1], sizes[2], sizes[0])] = arr[lo + j]
+    for j in range(0, sizes[1]): ##jki loop
         for k in range(0, sizes[2]):
-            lo = _acc3(0, j, k, sizes[0], sizes[1], sizes[2])
-            arr[lo:lo+sizes[0]] = _fftbasedit(arr=arr[lo:lo+sizes[0]], l2n=pows[0], n=sizes[0], x=-pi)
-            ##if i've done this correctly, we're already back in the original order - no need to permute
-#            ##exchange kij -> ijk
-#            for k in range(0, sizes[2]):
-#                arr[_acc3(i, j, k, sizes[0], sizes[1], sizes[2])] = tmp[lo + k]
+            lo = _acc3(j, k, 0, sizes[1], sizes[2], sizes[0])
+            tmp[lo:lo+sizes[0]] = _fftbasedit(arr=tmp[lo:lo+sizes[0]], l2n=pows[0], n=sizes[0], x=-pi)
+            for i in range(0, sizes[0]): ##permute jki -> ijk
+                arr[_acc3(i, j, k, sizes[0], sizes[1], sizes[2])] = tmp[lo + i]
+    for i in range(0, sizes[0]): ##ijk loop
+        for j in range(0, sizes[1]):
+            lo = _acc3(i, j, 0, sizes[0], sizes[1], sizes[2])
+            arr[lo:lo+sizes[2]] = _fftbasedit(arr=arr[lo:lo+sizes[2]], l2n=pows[2], n=sizes[2], x=-pi)
+            ##if I did this correctly, we're back at ijk (the original) ordering.  No need to permute again
+            ##for k in range(0, sizes[2]): ##permute ijk -> kij
+            ##    tmp[_acc3(k, i, j, sizes[2], sizes[0], sizes[1])] = arr[lo + k]
 
     return arr

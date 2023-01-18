@@ -73,7 +73,7 @@ def LocPot(Gi, Gj):
 ####################
 # CUTOFF CONSTANTS #
 ####################
-ENCUT = 115 ##eV
+ENCUT = 50#115 ##eV
 FFT_GCUT_MULT = 1.00 ##between 1 (a rough approximation) and 2 (100% match w/ naive multiplication)
                      ##VASP uses 1.75 by default
 #Gcut is prop to sqrt(encut)

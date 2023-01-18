@@ -18,10 +18,11 @@ def acc(n, i, j):
     return n*i + j
 
 def _acc3(i, j, k, lx, ly, lz):
-    return i + lx*(j + k*ly)
+    #return i*(ly*lz) + j*(lz) + k
+    return (i*ly + j)*lz + k
 
 
-#Computes
+#Computes action <psi| H
 def action(vg, psig, psiv, ##V(r) on grid (1d arr), Psi(G)'s coeffs on grid (1d arr), Psi(G)'s coefs as vector
            gridsizes, npw, mills, ##[lenx, leny, lenz], len(mills) = len(psiv), mills
            res, ##the action <psi| H, in-line with psiv (but not overwriting it! we need psiv later)
@@ -37,7 +38,7 @@ def action(vg, psig, psiv, ##V(r) on grid (1d arr), Psi(G)'s coeffs on grid (1d 
     ##TODO: V(r) should (i think) be pure real ... look into this
     for i in range(0, gridsizes[0]*gridsizes[1]*gridsizes[2]):
         psig[i] = psig[i] * vg[i]
-    ##Transform the grid back into W - we need V, so don't overwrite
+    ##Transform the grid back into W - we need V later, so don't overwrite
     psig = hfft._fftconv3basedit(arr=psig, buff=buff, pows=pows, sizes=gridsizes) / \
                                  (gridsizes[0]*gridsizes[1]*gridsizes[2]) ##(don't do bit rev!)
     res = hfft.GetPsiv(npw=npw, mills=mills, coeffs=res, psigrid=psig, sizes=gridsizes)

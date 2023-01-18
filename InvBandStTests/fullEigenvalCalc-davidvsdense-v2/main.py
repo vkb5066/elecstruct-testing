@@ -50,29 +50,54 @@ npw = len(mills)
 #Get eigenpairs the smart way
 vas, ves = hdav.DavidFFT(n=npw, mills=mills, gs=gs, kpt=hrps.KPT, vrgrid=vrgrid, gridsizes=sizesv,
                          nEigs=N_EIGS, maxBasisSize=None, v0m=0, v0n=0, V0=None, eTol=1e-3)
-#vas, ves = hdav.DavidCnv(n=npw, mills=mills, gs=gs, kpt=hrps.KPT, vggrid=vggrid, gridsizes=sizesv,
-#                         nEigs=N_EIGS, maxBasisSize=None, v0m=0, v0n=0, V0=None, eTol=1e-3)
+
 
 #Get eigenpairs the dumb way
+from numpy import sort
 from numpy.linalg import eig
+from scipy.sparse.linalg import eigs
 A = hrps.BuildHamil(k=hrps.KPT, npw=npw, gs=gs, mils=mills)
 vad, ved = eig(A)
 sind = vad.argsort()[:N_EIGS]
 vad = vad[sind]
 ved = ved[:,sind]
 
+print("\ndifferences in sparse vecs vs dumb vecs")
+vad2, ved2 = eigs(A, k=N_EIGS, which='SR')
+for i in range(0, N_EIGS):
+    diff = min(max(ved[:,i] - ved2[:,i]), max(ved[:,i] + ved2[:,i])) ##even normalized, may differ in sign
+    print(i, abs(diff))
+
 #And compare the results
-from numpy import allclose, transpose, conj
+from numpy import allclose, transpose, conj, round
+from numpy.linalg import norm
 print("\n\n")
 valsok = allclose(vas, vad, 1e-3, 1e-3)
-print(valsok)
+print("dav vals match with dumb vals?", valsok)
 if(not valsok):
     print(vas - vad)
 
-
 ves = transpose(ves)
 okay = True
+print("\nerrors in H|psi> = e|psi> from dav")
 for i in range(0, N_EIGS):
     okay = allclose(A@ves[:,i] - vas[i]*ves[:,i], 0.0, 1e-3, 1e-3)
     if(not okay):
         print(i, max(A@ves[:,i] - vas[i]*ves[:,i]))
+
+print("\nerrors in H|psi> = e|psi> from dumb method")
+for i in range(0, N_EIGS):
+    okay = allclose(A@ved[:,i] - vad[i]*ved[:,i], 0.0, 1e-3, 1e-3)
+    if(not okay):
+        print(i, max(A@ved[:,i] - vad[i]*ved[:,i]))
+
+#this one is slightly worrying, but maybe shouldn't be ... I mean, Hx - ex ~ 0, and x are normalized
+#so what gives?  Maybe repeated eigenvalues?
+print("\ndifferences in dav vecs vs dumb vecs")
+for i in range(0, N_EIGS):
+    diff = min(max(ved[:,i] - ves[:,i]), max(ved[:,i] + ves[:,i])) ##even normalized, may differ in sign
+    print(i, abs(diff))
+
+print("\nnorms (dumb, dav)")
+for i in range(0, N_EIGS):
+    print(i, norm(ved[:,i]), norm([ves[:,i]]))
