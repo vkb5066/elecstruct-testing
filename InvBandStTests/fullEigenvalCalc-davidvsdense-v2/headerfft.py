@@ -130,6 +130,20 @@ def _revbinpermute(arr, n, nh):
 
     return arr
 
+
+
+#Cos/Sin tables for recurrence.  Declare these static, maybe extern, and hard code them in
+L2M_MAX = 32 ##all fft grid sizes must be <= 2^(L2M_MAX)
+CT = [None for i in range(0, L2M_MAX)] ##covers all the way up to 2^32
+ST = [None for i in range(0, L2M_MAX)] ##might reasonably only go up to 2^16 or so ...
+
+from numpy import cos, sin
+for i in range(2, L2M_MAX):
+    d = (1 << i) >> 1
+    CT[i] = cos(pi/float(d)) ##note that the first 2 entries (arr[0], arr[1]) are completly unused
+    ST[i] = sin(pi/float(d)) ##maybe store some useful constants in there?
+
+
 #FFT Algos---------------------------------------------------
 #1D DIT FFT algo with no bit reversal section
 #this one is arranged for good memory access, but is most efficient when a trig table is used due to the
@@ -137,12 +151,15 @@ def _revbinpermute(arr, n, nh):
 #Needs the array to edit, the log_2(its size), its size, and x, the value in exp(ixj) (may be neg for ifft)
 #Note1: permute is done BEFORE the dit algo ... NOTE2: x is often just isign * pi
 def _fftbasedit(arr, l2n, n, x):
+    isign = -1 if x < 0. else +1 ##really, just consider sending in isign to this function then setting
+                                 ## ipi = isign*pi
+
     ##explicitly do the trivial 1+0i multiplications
     for i in range(0, n, 2):
-        tmpip0 = arr[i] + arr[i+1]
-        tmpip1 = arr[i] - arr[i+1]
-        arr[i]   = tmpip0
-        arr[i+1] = tmpip1
+        u = arr[i] + arr[i+1]
+        v = arr[i] - arr[i+1]
+        arr[i]   = u
+        arr[i+1] = v
     ##do the rest of the transform
     for ldm in range(2, l2n+1):
         m = 1<<ldm
@@ -150,14 +167,32 @@ def _fftbasedit(arr, l2n, n, x):
         phi = x / float(mh)
 
         for i in range(0, n, m):
-            for j in range(0, mh):
+            ###again, explicit 1+0i multiplications
+            ijmh = i + mh
+            u = arr[i] + arr[ijmh]
+            v = arr[i] - arr[ijmh]
+            arr[i]    = u
+            arr[ijmh] = v
+
+            ###trig recurr init
+            ##see https://en.wikipedia.org/wiki/Trigonometric_tables if we need less prec loss
+            wr = CT[ldm]
+            wi = isign*ST[ldm]
+            cn = wr*1 - wi*0
+            sn = wi*1 + wr*0
+            for j in range(1, mh):
                 ij = i + j
                 ijmh = ij + mh
 
                 u = arr[ij]
-                v = arr[ijmh] * exp(phi*float(j)*1.0j) ##call to trig table with index j
+                v = arr[ijmh] * (cn + 1.0j*sn) #exp(phi*float(j)*1.0j) ##call to trig table with index j
                 arr[ij]   = u + v
                 arr[ijmh] = u - v
+
+                ##update trig rec
+                cnt = cn
+                cn = wr*cn - wi*sn
+                sn = wi*cnt + wr*sn
 
     return arr
 
@@ -167,6 +202,9 @@ def _fftbasedit(arr, l2n, n, x):
 #Needs the array to edit, the log_2(its size), its size, and x, the value in exp(ixj) (may be neg for ifft)
 #Note1: permute is done AFTER the dif algo ... NOTE2: x is often just isign * pi
 def _fftbasedif(arr, l2n, n, x):
+    isign = -1 if x < 0. else +1 ##really, just consider sending in isign to this function then setting
+                                 ## ipi = isign*pi
+
     ##do most of the transform
     for ldm in range(l2n, 1, -1): ##ldm=l2n; ldm >= 2; --ldm
         m = 1<<ldm
@@ -174,20 +212,39 @@ def _fftbasedif(arr, l2n, n, x):
         phi = x / float(mh)
 
         for i in range(0, n, m):
-            for j in range(0, mh):
+            ###again, explicit 1+0i multiplications
+            ijmh = i + mh
+            u = arr[i] + arr[ijmh]
+            v = arr[i] - arr[ijmh]
+            arr[i]    = u
+            arr[ijmh] = v
+
+            ###trig recurr init
+            ##see https://en.wikipedia.org/wiki/Trigonometric_tables if we need less prec loss
+            wr = CT[ldm]
+            wi = isign*ST[ldm]
+            cn = wr*1 - wi*0
+            sn = wi*1 + wr*0
+            for j in range(1, mh):
                 ij = i + j
                 ijmh = ij + mh
 
                 u = arr[ij]
                 v = arr[ijmh]
                 arr[ij]   =  u + v
-                arr[ijmh] = (u - v) * exp(phi*float(j)*1.0j) ##call to trig table with index j
+                arr[ijmh] = (u - v) * (cn + 1.0j*sn) #exp(phi*float(j)*1.0j) ##call to trig table with index j
+
+                ##update trig rec
+                cnt = cn
+                cn = wr*cn - wi*sn
+                sn = wi*cnt + wr*sn
+
     ##explicitly do the trivial 1+0i multiplications
     for i in range(0, n, 2):
-        tmpip0 = arr[i] + arr[i+1]
-        tmpip1 = arr[i] - arr[i+1]
-        arr[i]   = tmpip0
-        arr[i+1] = tmpip1
+        u = arr[i] + arr[i+1]
+        v = arr[i] - arr[i+1]
+        arr[i]   = u
+        arr[i+1] = v
 
     return arr
 
