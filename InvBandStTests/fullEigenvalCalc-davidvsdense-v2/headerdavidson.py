@@ -32,19 +32,18 @@ def action(vg, psig, psiv, ##V(r) on grid (1d arr), Psi(G)'s coeffs on grid (1d 
     psig.fill(0.0 + 0.0j)  ##memset -> 0
     ##Get coeffs of psi from V onto the real space grid
     psig = hfft.GetPsig(npw=npw, mills=mills, coeffs=psiv, sizes=gridsizes, psigrid=psig)
-    psig = hfft._fftconv3basedif(arr=psig, buff=buff, pows=pows, sizes=gridsizes) *\
-                                 1# gridsizes[0] * gridsizes[1] * gridsizes[2] ##(don't do bit rev!)
+    psig = hfft._fftconv3basedif(arr=psig, buff=buff, pows=pows, sizes=gridsizes) ##(no bit rev)
     ##Compute the action in real space
     ##TODO: V(r) should (i think) be pure real ... look into this
+    norm_ = 1. / (gridsizes[0]*gridsizes[1]*gridsizes[2])
     for i in range(0, gridsizes[0]*gridsizes[1]*gridsizes[2]):
-        psig[i] = psig[i] * vg[i]
+        psig[i] = psig[i] * vg[i] * norm_ ##norm takes care of the 1/N1N2N3 part of the following inv fft
     ##Transform the grid back into W - we need V later, so don't overwrite
-    psig = hfft._fftconv3basedit(arr=psig, buff=buff, pows=pows, sizes=gridsizes) / \
-                                 (gridsizes[0]*gridsizes[1]*gridsizes[2]) ##(don't do bit rev!)
+    psig = hfft._fftconv3basedit(arr=psig, buff=buff, pows=pows, sizes=gridsizes) ##(no bit rev)
     res = hfft.GetPsiv(npw=npw, mills=mills, coeffs=res, psigrid=psig, sizes=gridsizes)
     # Finish up with the kinetic energy part
-    for j in range(0, npw):
-        res[j] += psiv[j]*diags[j]
+    for i in range(0, npw):
+        res[i] += psiv[i]*diags[i]
 
     return res
 
@@ -142,7 +141,7 @@ def DavidFFT(n, mills, gs, kpt, vrgrid, gridsizes, nEigs, maxBasisSize=None, v0m
     #V = MGS(V=V, Q=Q, nVecs=maxBasisSize, vecDim=n)
 
 
-    #Buffer for MGS(V) size mbs x n
+    #Buffer for MGS(V) (and the temp wavefunction coeffs if we're doing fsm), size mbs x n
     Q = empty(shape=(maxBasisSize*n), dtype=complex)
 
     ##Main diagonals of the hamiltonian, these are used often enough to warrent their own storage
@@ -185,18 +184,21 @@ def DavidFFT(n, mills, gs, kpt, vrgrid, gridsizes, nEigs, maxBasisSize=None, v0m
         #(also note that you'd have to build V(G) as V*(G) before transforming it to V(r) ... or if thats
         #too confusing, have two grids - one for V(G) -> V(r) and one for V*(G) -> V(r)
         for i in range(0, currBasisSize): ##loop over bands
-            W[i*n:(i+1)*n] = action(vg=vrgrid, psig=psigridmain, psiv=V[i*n:(i+1)*n],
-                                    gridsizes=gridsizes, npw=n, mills=mills,
-                                    res=W[i*n:(i+1)*n],
-                                    diags=D, buff=buff)
             if(fsm): ##this is equivalent to doing H' @ H', if we were able to store all of H' at once
-                     ##note: psiv and res are the same vector!  you can't use the restrict keyword here!
-                     ##(unless we made a tmp variable for W ... worth it?)
-                from copy import deepcopy
-                W[i*n:(i+1)*n] = action(vg=vrgrid, psig=psigridmain, psiv=deepcopy(W[i*n:(i+1)*n]),
+                Q[i*n:(i+1)*n] = action(vg=vrgrid, psig=psigridmain, psiv=V[i*n:(i+1)*n],
+                                        gridsizes=gridsizes, npw=n, mills=mills,
+                                        res=Q[i*n:(i+1)*n],
+                                        diags=D, buff=buff)
+                W[i*n:(i+1)*n] = action(vg=vrgrid, psig=psigridmain, psiv=Q[i*n:(i+1)*n],
                                         gridsizes=gridsizes, npw=n, mills=mills,
                                         res=W[i*n:(i+1)*n],
                                         diags=D, buff=buff)
+            else:
+                W[i*n:(i+1)*n] = action(vg=vrgrid, psig=psigridmain, psiv=V[i*n:(i+1)*n],
+                                        gridsizes=gridsizes, npw=n, mills=mills,
+                                        res=W[i*n:(i+1)*n],
+                                        diags=D, buff=buff)
+
 
 
         #H = V* @ W^T, w/ H hermitian (hence this being a bit more complex than the normal dot prod formula)

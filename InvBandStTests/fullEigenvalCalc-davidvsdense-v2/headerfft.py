@@ -132,7 +132,7 @@ def _revbinpermute(arr, n, nh):
 
 
 
-#Cos/Sin tables for recurrence.  Declare these static, maybe extern, and hard code them in
+#Cos/Sin tables for recurrence.  Declare these static, const, maybe extern, and hard code them in
 L2M_MAX = 32 ##all fft grid sizes must be <= 2^(L2M_MAX)
 CT = [None for i in range(0, L2M_MAX)] ##covers all the way up to 2^32
 ST = [None for i in range(0, L2M_MAX)] ##might reasonably only go up to 2^16 or so ...
