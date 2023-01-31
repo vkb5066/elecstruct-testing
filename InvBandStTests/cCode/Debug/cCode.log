@@ -1,0 +1,7 @@
+﻿  main.c
+C:\Users\baron\Desktop\School\Research\(1)Code\(4) General C\cCode\atomstruct.h(40,19): warning C4047: 'function': 'double *' differs in levels of indirection from 'double (*)[3]'
+C:\Users\baron\Desktop\School\Research\(1)Code\(4) General C\cCode\atomstruct.h(40,6): warning C4024: 'cob': different types for formal and actual parameter 1
+C:\Users\baron\Desktop\School\Research\(1)Code\(4) General C\cCode\atomstruct.h(46,19): warning C4047: 'function': 'double *' differs in levels of indirection from 'double (*)[3]'
+C:\Users\baron\Desktop\School\Research\(1)Code\(4) General C\cCode\atomstruct.h(46,6): warning C4024: 'cob': different types for formal and actual parameter 1
+C:\Users\baron\Desktop\School\Research\(1)Code\(4) General C\cCode\main.c(21,20): warning C4018: '<': signed/unsigned mismatch
+  cCode.vcxproj -> C:\Users\baron\Desktop\School\Research\(1)Code\(4) General C\cCode\Debug\cCode.exe
