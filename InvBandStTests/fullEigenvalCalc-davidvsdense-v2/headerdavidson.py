@@ -9,7 +9,7 @@ import headerrunparams as hrps
 import headerfft as hfft
 from numpy import zeros, empty, array, conj, transpose, sqrt, dot
 from scipy.fft import fftn, ifftn
-from numpy.linalg import eig, norm
+from numpy.linalg import eig, norm, eigh
 
 
 #If an mxn matrix is stored as a single array, this accesses it's ith, jth element
@@ -37,7 +37,10 @@ def action(vg, psig, psiv, ##V(r) on grid (1d arr), Psi(G)'s coeffs on grid (1d 
     ##TODO: V(r) should (i think) be pure real ... look into this
     norm_ = 1. / (gridsizes[0]*gridsizes[1]*gridsizes[2])
     for i in range(0, gridsizes[0]*gridsizes[1]*gridsizes[2]):
-        psig[i] = psig[i] * vg[i] * norm_ ##norm takes care of the 1/N1N2N3 part of the following inv fft
+        psig[i] = psig[i] * vg[i].real * norm_ ##norm takes care of the 1/N1N2N3 part of the following inv fft
+    #print(psig[_acc3(0, 0, 0, gridsizes[0], gridsizes[1], gridsizes[2])])
+    #print(psig[_acc3(1, 2, 3, gridsizes[0], gridsizes[1], gridsizes[2])])
+    #exit(2)
     ##Transform the grid back into W - we need V later, so don't overwrite
     psig = hfft._fftconv3basedit(arr=psig, buff=buff, pows=pows, sizes=gridsizes) ##(no bit rev)
     res = hfft.GetPsiv(npw=npw, mills=mills, coeffs=res, psigrid=psig, sizes=gridsizes)
@@ -47,7 +50,6 @@ def action(vg, psig, psiv, ##V(r) on grid (1d arr), Psi(G)'s coeffs on grid (1d 
 
     return res
 
-
 #In the C code, initialize space for both Q and V in FFTDav
 #Have V be the input, and Q the output (Q is the buffer on input)
 #Each call to MGS edits and updates Q, then switches V to point to Q, and Q to V (this way, the main
@@ -56,7 +58,7 @@ def MGS(V, Q, nVecs, vecDim):
     ##Make an nVecs (rows) x vecDim (cols) matrix
     #so the ith row of the return vector will be the ith orthogonal vector of V
     #Q = empty(shape=(nVecs, vecDim), dtype=complex)
-
+    #print(itt)
     for i in range(0, nVecs):
         #Normalize V into Q
         norm_ = 0. ##strictly real
@@ -75,11 +77,15 @@ def MGS(V, Q, nVecs, vecDim):
                 qipvj += conj(Q[acc(vecDim, i, k)]) * V[acc(vecDim, j, k)]
             for k in range(0, vecDim):
                 V[acc(vecDim, j, k)] -= qipvj*Q[acc(vecDim, i, k)]
-
     return Q
 
+#Classical grahm schmidt - a bad idea for ill conditioned matrices, but significantly faster than MGS
+def CGS(V, Q, nVecs, vecDim):
 
-
+    for j in range(0, nVecs):
+        #Orthogonalize
+        qipvj = 0.0 + 0.0j
+        #normalize V into Q
 
 
 from numpy import reshape
@@ -124,15 +130,29 @@ def DavidFFT(n, mills, gs, kpt, vrgrid, gridsizes, nEigs, maxBasisSize=None, v0m
     from random import random, seed
     seed(69420) ##DON'T RE-SEED IN C CODE
     for i in range(min(maxBasisSize, v0m), maxBasisSize):
-        norm_ = 0. ##strictly real
         for j in range(min(n, v0n), n):
             ij = acc(n, i, j)
             V[ij] = random() + random()*1j
-            norm_ += conj(V[ij])*V[ij]
-        ##Normalize
-        norm_ = 1./sqrt(norm_)
+
+###delete me later !!!
+    """
+    for i in range(0, maxBasisSize):
+        for j in range(0, n):
+            V[acc(n, i, j)] = 0.0 + 0.0j
+        V[acc(n, i, i)] = 1.0 + 0.0j
+    """
+###ok you can stop now
+
+    ##normalize
+    for i in range(0, maxBasisSize):
+        norm_ = 0.  ##strictly real
+        for j in range(0, n):
+            ij = acc(n, i, j)
+            norm_ += conj(V[ij]) * V[ij]
+        norm_ = 1/sqrt(norm_)
         for j in range(0, n):
             V[acc(n, i, j)] *= norm_
+
 
     ##strictly speaking, we should guarentee that V is now orthogonal.
     ##realistically, any reasonable initial guess will satisfy this requirement.  Additionally, the random
@@ -142,23 +162,25 @@ def DavidFFT(n, mills, gs, kpt, vrgrid, gridsizes, nEigs, maxBasisSize=None, v0m
 
 
     #Buffer for MGS(V) (and the temp wavefunction coeffs if we're doing fsm), size mbs x n
+    #also the buffer for H (size mbs x mbs < Q's mbs x n) and T (size neigs x n < Q's mbs x n)
     Q = empty(shape=(maxBasisSize*n), dtype=complex)
 
     ##Main diagonals of the hamiltonian, these are used often enough to warrent their own storage
     D = empty(shape=(n), dtype=float)
     for i in range(0, n):
-        D[i] = hrps.LocKin(k=kpt, Gi=gs[i], Gj=gs[i]) - eref
+#        D[i] = hrps.LocKin(k=kpt, Gi=gs[i], Gj=gs[i]) - eref
+        D[i] = hrps.LocKin2(k=kpt, hm=mills[i][0], km=mills[i][1], lm=mills[i][2]) - eref
 
 
     ##columns of ritz vectors (stored as rows, pointer-to-pointer since we'll be returning these as eigvecs)
     X = empty(shape=(nEigs, n), dtype=complex)
     ##columns of new search directions
-    T = empty(shape=(nEigs*n), dtype=complex)
+    """T = empty(shape=(nEigs*n), dtype=complex)"""
 
     #W holds V dot A*, size maxBasisSize x n
     W = empty(shape=(maxBasisSize*n), dtype=complex)
     #H is the hermitian matrix V^+ dot A dot V, size maxBasisSize x maxBasisSize
-    H = empty(shape=(maxBasisSize*maxBasisSize), dtype=complex)
+    """H = empty(shape=(maxBasisSize*maxBasisSize), dtype=complex)"""
 
     #Holds the wavefunction fft grid, would really need one of these for each thread that is working
     #on an individual band
@@ -171,10 +193,20 @@ def DavidFFT(n, mills, gs, kpt, vrgrid, gridsizes, nEigs, maxBasisSize=None, v0m
     #A = hrps.BuildHamil(k=hrps.KPT, npw=n, gs=gs, mils=mills)
     #!!!!!
 
+    #setup preconditioner
+    P = empty(shape=n, dtype=float)
+    vavg = 0.
+    for i in range(0, gridsizes[0]*gridsizes[1]*gridsizes[2]):
+        vavg += vrgrid[i].real
+    vavg /= (gridsizes[0]*gridsizes[1]*gridsizes[2])
+    vavgmeref = vavg - eref
 
     currE, lastE = 2.*eTol, 0.
     currBasisSize = nEigs
     counter = 0
+    #print(sorted(D))
+    #print(n)
+    #exit(3)
     from copy import deepcopy
     from numpy import allclose, round
     while(True):
@@ -207,16 +239,16 @@ def DavidFFT(n, mills, gs, kpt, vrgrid, gridsizes, nEigs, maxBasisSize=None, v0m
         #H = conj(V) @ A @ transpose(V)
         for i in range(0, currBasisSize):
             ii = acc(currBasisSize, i, i)
-            H[ii] = 0.0 + 0.0j
+            Q[ii] = 0.0 + 0.0j
             for j in range(0, n):
                 ij = acc(n, i, j)
-                H[ii] += conj(V[ij]) * W[ij]
+                Q[ii] += conj(V[ij]) * W[ij]
             for j in range(i+1, currBasisSize):
                 ij = acc(currBasisSize, i, j)
-                H[ij] = 0.0 + 0.0j
+                Q[ij] = 0.0 + 0.0j
                 for k in range(0, n):
-                    H[ij] += conj(V[acc(n, i, k)]) * W[acc(n,j,k)]
-                H[acc(currBasisSize, j, i)] = conj(H[ij])
+                    Q[ij] += conj(V[acc(n, i, k)]) * W[acc(n,j,k)]
+                Q[acc(currBasisSize, j, i)] = conj(Q[ij])
 
 
 
@@ -227,14 +259,15 @@ def DavidFFT(n, mills, gs, kpt, vrgrid, gridsizes, nEigs, maxBasisSize=None, v0m
         #QR then transition to JD
         #Note3: The JD algo is very easily/efficiently run in parallel compared to QR
         #print(round(H[0:currBasisSize,0:currBasisSize], 0))
-        H2 = reshape(a=H[0:currBasisSize*currBasisSize],
+        H2 = reshape(a=Q[0:currBasisSize*currBasisSize],
                      newshape=(-1, currBasisSize)) ##only to make this work with eig()
+        from qrsercolsFirst import QR as myqr
         va, ve = eig(H2)
+        #va, ve = myqr(n=currBasisSize, A=H2, giveVecs=True, smallTol=1e-8, itrLim=30)
         sind = va.argsort()[:nEigs]
         va = va[sind]
         ve = ve[:,sind]
         ve = transpose(ve) ##this is the case for my C implementation of eigh
-
 
         #Get ritz vectors
         #These approximate the eigenvectors of A and are in order with the eigenvalues
@@ -269,20 +302,42 @@ def DavidFFT(n, mills, gs, kpt, vrgrid, gridsizes, nEigs, maxBasisSize=None, v0m
         #And the (ith, jth) component of R is
         #R(i,j) = va(i)X(i,j)  -  [ W^T @ ve(i) ](ij)    for 0 <= i < nEigs, 0 <= j < n
         #Which is necessary for finding the search directions T(i,j) = R(i,j) / (va(i)-D(j))
+        #fsm = not fsm
         for i in range(0, nEigs):
+            if(fsm):
+                keavg = 0.0
+                for j in range(0, n):
+                    keavg += X[i][j] * (D[j] + eref)
+                keavg /= 0*1+1*n
+                keavg = (conj(keavg)*keavg).real
+                for j in range(0, n):
+                    B = hrps.B
+                    qi_ = empty(shape=3)
+                    hm, km, lm = mills[j][0], mills[j][1], mills[j][2]
+                    qi_[0] = hm * B[0][0] + km * B[1][0] + lm * B[2][0]
+                    qi_[1] = hm * B[0][1] + km * B[1][1] + lm * B[2][1]
+                    qi_[2] = hm * B[0][2] + km * B[1][2] + lm * B[2][2]
+                    qi2 = hrps.hbar2over2m*dot(qi_, qi_)
+                    P[j] = (keavg*keavg) / ((qi2 + vavg - eref)**2 + keavg*keavg)  ## ~ 1/(H - eref)^2
+                #print("  ", i, "ke =", keavg)
+
             for j in range(0, n):
                 ij = acc(n=n, i=i, j=j)
-                T[ij] = va[i]*X[i][j]
+                Q[ij] = va[i]*X[i][j]
                 for k in range(0, currBasisSize): ##the ith, jth component of W^T @ ve
-                    T[ij] -= ve[i][k] * W[acc(n,k,j)]
-                T[ij] /= (va[i] - D[j]) ###may want double precision for T because of this step
+                    Q[ij] -= ve[i][k] * W[acc(n,k,j)]
+                if(fsm):
+                    Q[ij] *= P[j]  ###may want double precision for T because of this step
+                else:
+                    Q[ij] /= (va[i] - D[j]) ###may want double precision for T because of this step
+        #fsm = not fsm
 
 
         #Increase the basis size or restart
         if(currBasisSize + nEigs < maxBasisSize): ##increase of basis
             for i in range(0, nEigs):
                 for j in range(0, n):
-                    V[acc(n, currBasisSize+i, j)] = T[acc(n, i, j)]
+                    V[acc(n, currBasisSize+i, j)] = Q[acc(n, i, j)]
             V[0:(currBasisSize+nEigs)*n] = MGS(V=V[0:(currBasisSize+nEigs)*n],
                                                Q=Q[0:(currBasisSize+nEigs)*n],
                                                nVecs=currBasisSize+nEigs, vecDim=n)
@@ -292,7 +347,7 @@ def DavidFFT(n, mills, gs, kpt, vrgrid, gridsizes, nEigs, maxBasisSize=None, v0m
                 for j in range(0, n):
                     ij = acc(n, i, j)
                     V[ij] = X[i][j]
-                    V[acc(n, i+nEigs, j)] = T[ij]
+                    V[acc(n, i+nEigs, j)] = Q[ij]
             V[0:(2*nEigs)*n] = MGS(V=V[0:(2*nEigs)*n],
                                    Q=Q[0:(2*nEigs)*n],
                                    nVecs=2*nEigs, vecDim=n)

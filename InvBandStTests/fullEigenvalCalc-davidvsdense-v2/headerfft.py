@@ -26,12 +26,12 @@ def _acc3(i, j, k, lx, ly, lz):
 
 #Returns the size of the fft grid given a miller index m that satisfies m*|b| >= Gcut, m=|m|
 def GiveFFTSize(millermaxabsind, B):
-    return max(4, NPO2(2*m+1)) ##always must be at least 4 to avoid problems with fft algo
+    return max(4, NPO2(4*m+1)) ##always must be at least 4 to avoid problems with fft algo
 
 #Gets V on the reciprocal space grid, given sizes[3] are powers of 2 sizes for the fft grid
 #V should already be memset to zero
 #atomsites and potparams are the locations and potential params as dictionaries whose keys are identical
-from numpy import dot, sqrt, conj, pi, exp
+from numpy import dot, sqrt, conj, pi, exp, round
 import headerrunparams as hrps
 def GetVg(sizes, vg, atomsites, potparams, B, conj_=False):
     halfsizeh = sizes[0] >> 1
@@ -45,6 +45,7 @@ def GetVg(sizes, vg, atomsites, potparams, B, conj_=False):
             k = ki - halfsizek
             for li in range(0, sizes[2]):
                 l = li - halfsizel
+                #print(h, k, l)
 
                 #Compute the local potential for this h, k, l
                 g[0] = float(h)*B[0][0] + float(k)*B[1][0] + float(l)*B[2][0]
@@ -53,11 +54,17 @@ def GetVg(sizes, vg, atomsites, potparams, B, conj_=False):
                 q = sqrt(dot(g, g))
 
                 ind = _acc3(hi, ki, li, sizes[0], sizes[1], sizes[2])
+                #print(ind, h, k, l, hi, ki, li, round(q, 3), ":")
                 for elem in atomsites.keys():
-                    vg[ind] += hrps.StructFact(g, elem) * hrps.LocAtomPot(q, elem)
+                    s = hrps.StructFact(g, elem)
+                    va = hrps.LocAtomPot(q, elem)
+                #    print("  ", elem, round(s, 5), round(va, 5))
+                    vg[ind] += s*va
+                #print("|-->", round(vg[ind], 5), "\n")
                 if(conj_):
                     vg[ind] = conj(vg[ind])
 
+    #exit(2)
     return vg
 
 #Gets psi on the reciprocal space grid
@@ -185,7 +192,8 @@ def _fftbasedit(arr, l2n, n, x):
                 ijmh = ij + mh
 
                 u = arr[ij]
-                v = arr[ijmh] * (cn + 1.0j*sn) #exp(phi*float(j)*1.0j) ##call to trig table with index j
+                #v = arr[ijmh] * (cn + 1.0j*sn) #exp(phi*float(j)*1.0j)
+                v = (arr[ijmh].real*cn - arr[ijmh].imag*sn) + 1j*(arr[ijmh].real*sn + arr[ijmh].imag*cn)
                 arr[ij]   = u + v
                 arr[ijmh] = u - v
 
@@ -201,15 +209,19 @@ def _fftbasedit(arr, l2n, n, x):
 #increased number of calls to complex exp
 #Needs the array to edit, the log_2(its size), its size, and x, the value in exp(ixj) (may be neg for ifft)
 #Note1: permute is done AFTER the dif algo ... NOTE2: x is often just isign * pi
-def _fftbasedif(arr, l2n, n, x):
+def _fftbasedif(arr, l2n, n, x, p=0):
     isign = -1 if x < 0. else +1 ##really, just consider sending in isign to this function then setting
                                  ## ipi = isign*pi
-
+    #if(p):
+    #    print(arr, "\n\n")
     ##do most of the transform
     for ldm in range(l2n, 1, -1): ##ldm=l2n; ldm >= 2; --ldm
         m = 1<<ldm
         mh = m>>1
         phi = x / float(mh)
+
+        #if(p):
+        #    print(ldm, m, mh)
 
         for i in range(0, n, m):
             ###again, explicit 1+0i multiplications
@@ -231,21 +243,32 @@ def _fftbasedif(arr, l2n, n, x):
 
                 u = arr[ij]
                 v = arr[ijmh]
+                umv = u - v
                 arr[ij]   =  u + v
-                arr[ijmh] = (u - v) * (cn + 1.0j*sn) #exp(phi*float(j)*1.0j) ##call to trig table with index j
+                #arr[ijmh] = (umv) * (cn + 1.0j*sn) #exp(phi*float(j)*1.0j)
+                arr[ijmh] = (umv.real*cn - umv.imag*sn) + 1j*(umv.real*sn + umv.imag*cn)
 
                 ##update trig rec
                 cnt = cn
                 cn = wr*cn - wi*sn
                 sn = wi*cnt + wr*sn
 
+
     ##explicitly do the trivial 1+0i multiplications
     for i in range(0, n, 2):
+        #if(p):
+        #    print(i, u, v, arr[i], arr[i+1])
         u = arr[i] + arr[i+1]
         v = arr[i] - arr[i+1]
         arr[i]   = u
         arr[i+1] = v
+        #if (p):
+            #print(i, u, v, arr[i], arr[i + 1], "\n")
 
+
+    #if(p):
+        #print("\n\n", arr)
+        #exit(30)
     return arr
 
 
@@ -532,27 +555,31 @@ from numpy import empty
 def _fftconv3basedif(arr, pows, sizes,
                      buff=None): ###buff isn't used, but i kept it here to be compatible with old fun calls
     tmp = empty(shape=sizes[0]*sizes[1]*sizes[2], dtype=complex)
-
+    #print("IJK")
     for i in range(0, sizes[0]): ##ijk loop
         for j in range(0, sizes[1]):
             lo = _acc3(i, j, 0, sizes[0], sizes[1], sizes[2])
             arr[lo:lo+sizes[2]] = _fftbasedif(arr=arr[lo:lo+sizes[2]], l2n=pows[2], n=sizes[2], x=+pi)
             for k in range(0, sizes[2]): ##permute ijk -> jki
                 tmp[_acc3(j, k, i, sizes[1], sizes[2], sizes[0])] = arr[lo + k]
+    #print("JKI")
     for j in range(0, sizes[1]): ##jki loop
         for k in range(0, sizes[2]):
             lo = _acc3(j, k, 0, sizes[1], sizes[2], sizes[0])
             tmp[lo:lo+sizes[0]] = _fftbasedif(arr=tmp[lo:lo+sizes[0]], l2n=pows[0], n=sizes[0], x=+pi)
             for i in range(0, sizes[0]): ##permute jki -> kij
+                #print(lo, _acc3(k, i, j, sizes[2], sizes[0], sizes[1]), lo+i)
                 arr[_acc3(k, i, j, sizes[2], sizes[0], sizes[1])] = tmp[lo + i]
+    #print("KIJ")
     for k in range(0, sizes[2]): ##kij loop
         for i in range(0, sizes[0]):
             lo = _acc3(k, i, 0, sizes[2], sizes[0], sizes[1])
-            arr[lo:lo+sizes[1]] = _fftbasedif(arr=arr[lo:lo+sizes[1]], l2n=pows[1], n=sizes[1], x=+pi)
+            #print(lo, "b4", arr[lo])
+            arr[lo:lo+sizes[1]] = _fftbasedif(arr=arr[lo:lo+sizes[1]], l2n=pows[1], n=sizes[1], x=+pi, p=1)
             ##we can skip this so long as we're careful to do the dit algo backwards
             ##for j in range(0, sizes[1]): ##permute kij -> ijk
             ##    tmp[_acc3(i, j, k, sizes[0], sizes[1], sizes[2])] = arr[lo + j]
-
+    #        print(lo, "af", arr[lo])
     return arr
 
 

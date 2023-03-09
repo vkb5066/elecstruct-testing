@@ -10,8 +10,9 @@
 import headerdavidson as hdav
 import headerfft as hfft
 import headerrunparams as hrps ## definitions for the input file, hidden to avoid making this file too complex
+from copy import deepcopy
 
-N_EIGS = 8
+N_EIGS = 1
 
 #Finds maximum sampling index given a Gcut^2, the corresponding recip lattice vector b,
 #and a k-point's fractional distance along b
@@ -34,11 +35,14 @@ vggrid = zeros(shape=(sizesv[0]*sizesv[1]*sizesv[2]), dtype=complex)
 vggrid = hfft.GetVg(sizes=sizesv, vg=vggrid,
                     atomsites=hrps.REAL_SITES_LOC, potparams=hrps.PPARAMS_LOC, B=hrps.B,
                     conj_=False) ##note! if conj = true, return conj(X) from DavidFFT()
+
 from numpy import empty
 buff = empty(shape=max([sizesv[0], sizesv[1], sizesv[2]]), dtype=complex)
 powsv = [hfft.NLO2(n) for n in sizesv]
 #vrgrid = hfft.fft3dif(arr=vggrid, buff=buff, pows=powsv, sizes=sizesv, isign=+1)
-vrgrid = hfft._fftconv3basedif(arr=vggrid, buff=buff, pows=powsv, sizes=sizesv)
+#for i in range(0, 512):
+#    vggrid[i] = i + i*1j
+vrgrid = hfft._fftconv3basedif(arr=deepcopy(vggrid), buff=buff, pows=powsv, sizes=sizesv)
 #Get the G vectors for this k point and energy cutoff
 sizesp = [GiveSampleMaxInd(hrps.gcut2, hrps.B[0], hrps.KPT[0]), ##hmax
           GiveSampleMaxInd(hrps.gcut2, hrps.B[1], hrps.KPT[1]), ##kmax
@@ -47,22 +51,28 @@ sizesp = [GiveSampleMaxInd(hrps.gcut2, hrps.B[0], hrps.KPT[0]), ##hmax
 mills, gs = hrps.GetPsiList(B=hrps.B, kpt=hrps.KPT, millmax=sizesp, gcut2=hrps.gcut2)
 npw = len(mills)
 
-
-
 TEST_FOLDSPEC = 1
-eref = 9.
+eref = 6.7
 if(not TEST_FOLDSPEC):
     #Get eigenpairs the smart way
     vas, ves = hdav.DavidFFT(n=npw, mills=mills, gs=gs, kpt=hrps.KPT, vrgrid=vrgrid, gridsizes=sizesv,
                              nEigs=N_EIGS, maxBasisSize=None, v0m=0, v0n=0, V0=None, eTol=1e-3,
                              fsm=TEST_FOLDSPEC, eref=0.0)
-
+    print(vas)
+    #print(ves)
 
     #Get eigenpairs the dumb way
     from numpy import sort
     from numpy.linalg import eig
     from scipy.sparse.linalg import eigs
-    A = hrps.BuildHamil(k=hrps.KPT, npw=npw, gs=gs, mils=mills)
+    #A = hrps.BuildHamil(k=hrps.KPT, npw=npw, gs=gs, mils=mills)
+    A = hrps.BuildHamil(k=hrps.KPT, npw=npw, gs=gs, mils=mills, uvgg=0, vgg=vggrid, sizes=sizesv)
+    #with open("out", 'w') as outfile:
+    #    outfile.write(str(npw) + "\n")
+    #    for i in range(0, npw):
+    #        for j in range(0, npw):
+    #            outfile.write(str(i) + ' ' + str(j) + ' ' + str(A[i][j].real) + ' ' + str(A[i][j].imag) + "\n")
+    #    exit(3)
     vad, ved = eig(A)
     sind = vad.argsort()[:N_EIGS]
     vad = vad[sind]
@@ -111,15 +121,15 @@ if(not TEST_FOLDSPEC):
 if(TEST_FOLDSPEC):
     # Get eigenpairs the smart way
     vas, ves = hdav.DavidFFT(n=npw, mills=mills, gs=gs, kpt=hrps.KPT, vrgrid=vrgrid, gridsizes=sizesv,
-                             nEigs=N_EIGS, maxBasisSize=None, v0m=0, v0n=0, V0=None, eTol=1e-3,
+                             nEigs=N_EIGS, maxBasisSize=None, v0m=0, v0n=0, V0=None, eTol=1e-7,
                              fsm=TEST_FOLDSPEC, eref=eref)
 
     # Get eigenpairs the dumb way
     from numpy import sort
-    from numpy.linalg import eig
+    from numpy.linalg import eig, eigh
 
     A = hrps.BuildHamil(k=hrps.KPT, npw=npw, gs=gs, mils=mills)
-    vad, ved = eig(A)
+    vad, ved = eigh(A)
     ###get those closest to eref
     distsfromeref = []
     for i in range(0, npw):
