@@ -106,7 +106,7 @@ def locg1(A, tol):
         lam = conj(transpose(xi))@(A@xi)  #/ (conj(transpose(xi))@xi)
         r = xi - A@xi/lam
         w = T@r
-        print(numpy.linalg.norm(w))
+        #print(numpy.linalg.norm(w))
 
         w, xi, xim1 = ogs(npw, w, xi, xim1)
         e, v = ritz(npw, A, w, xi, xim1)
@@ -124,13 +124,30 @@ def locg1(A, tol):
     return e, v
 
 
-"""
+def rit(n, A, a, b):
+    V = empty(shape=(n, 2), dtype=complex)
+    for i in range(0, n):
+        V[i][0] = a[i]
+        V[i][1] = b[i]
+
+    m = 1 ##1 eigenvalue
+    H = conj(transpose(V))@A@V
+    #print("cond ", numpy.linalg.cond(H, 2))
+    e, u = eig(H)
+    sind = e.argsort()[:m]
+    e = e[sind]
+    u = u[:,sind]
+    v = V@u
+    return e, v
+
+
 from scipy.linalg import lstsq
 def locg2(A, tol):
     npw = A.shape[0]
 
     w, xi = ropt(npw), ropt(npw)
     pi = zeros(shape=(npw, 1), dtype=complex)
+    pi = ropt(npw)
     T = eye(npw, dtype=complex)
     #for i in range(0, npw):
     #    T[i][i] = 1/A[i][i]
@@ -138,33 +155,31 @@ def locg2(A, tol):
     e, v = None, None
     eold = 2*tol
     for i in range(0, 10000):
-        lam = conj(transpose(xi))@(A@xi) #/ (conj(transpose(xi))@xi)
+        lam = conj(transpose(xi))@(A@xi) / (conj(transpose(xi))@xi)
         r = xi - A@xi/lam
         w = T@r
 
         #w /= sqrt(conj(transpose(w))@w)
-        xi /= sqrt(conj(transpose(xi))@xi)
+        #xi /= sqrt(conj(transpose(xi))@xi)
+        if(i):
+            pass
+            #print(pi)
+            #w, xi, pi = ogs(npw, w, xi, pi)
+            #print(pi)
         e, v = ritz(npw, A, w, xi, pi)
 
-        #print(i, abs(e[0] - eold))
+        print(i, abs(e[0] - eold))
         if(abs(e[0] - eold) < tol):
             break
         eold = e[0]
 
-
-        M = empty(shape=(npw, 2), dtype=complex)
-        for i in range(0, npw):
-            M[i][0] = xi[i]
-            M[i][1] = pi[i]
-        res = lstsq(a=M, b=v-w)[0]
-
-        pi = w + res[1]*pi
-        #pi /= sqrt(conj(transpose(pi)) @ pi)
+        _, __ = rit(npw, A, w, pi)
+        pi = deepcopy(__)
         xi = deepcopy(v)
 
     print("finished in", i, "steps")
     return e, v
-"""
+
 seed(267)
 neig = 1
 A = matmake(123)
@@ -177,6 +192,6 @@ print(sorted(ereal)[:neig])
 print("locg1 ...")
 ecg, vcg = locg1(A=A, tol=1e-8)
 print(sorted(ecg))
-#print("locg2 ...")
-#ecg, vcg = locg2(A=A, tol=1e-8)
-#print(sorted(ecg))
+print("locg2 ...")
+ecg, vcg = locg2(A=A, tol=1e-8)
+print(sorted(ecg))
