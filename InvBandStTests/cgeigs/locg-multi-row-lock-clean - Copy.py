@@ -212,13 +212,13 @@ def locg1(npw, A, neigs, tol):
 
 
 seed(267)
-neig = 5
-size = 200
+neig = 4
+size = 100
 A = matmake(size)
 #print(A)
 print("begin")
 
-ecg, vcg = locg1(npw=size, A=A, neigs=neig, tol=1e-2)
+ecg, vcg = locg1(npw=size, A=A, neigs=neig, tol=1e-4)
 print("locg1 ...")
 ecg = sorted(e.real for e in ecg)
 print(ecg)
